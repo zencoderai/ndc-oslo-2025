@@ -5,6 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 from typing import List
 import os
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from database import get_db, init_db
 from models import Talk
@@ -46,6 +47,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.on_event("startup")
 async def startup_event():
     init_db()
+
+# Initialize Prometheus metrics - must be done before app starts
+Instrumentator().instrument(app).expose(app)
 
 @app.get("/")
 def read_root():
