@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: conference-app
+data:
+  REACT_APP_API_URL: "http://backend-service:8000"
+  ENABLE_METRICS: "true"
+  POSTGRES_DB: "conference_db"

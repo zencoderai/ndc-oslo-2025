@@ -5,10 +5,12 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 from typing import List
 import os
+import logging
 
 from database import get_db, init_db
 from models import Talk
 from schemas import TalkCreate, TalkResponse
+from prometheus_fastapi_instrumentator import Instrumentator
 
 app = FastAPI(title="NDC Oslo 2025 API")
 
@@ -20,6 +22,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Configure Prometheus metrics
+instrumentator = Instrumentator(
+    should_group_status_codes=True,
+    should_ignore_untemplated=True,
+    should_respect_env_var=True,
+    should_instrument_requests_inprogress=True,
+    excluded_handlers=[".*admin.*", "/metrics"],
+    env_var_name="ENABLE_METRICS",
+    inprogress_name="inprogress",
+    inprogress_labels=True,
+)
+# Instrument the app immediately rather than in startup event
+instrumentator.instrument(app).expose(app, include_in_schema=True, should_gzip=True)
 
 # Add a custom exception handler for validation errors
 @app.exception_handler(RequestValidationError)
@@ -77,9 +93,41 @@ def create_talk(talk: TalkCreate, db: Session = Depends(get_db)):
         raise
 
 @app.get("/api/talks", response_model=List[TalkResponse])
-def read_talks(db: Session = Depends(get_db)):
-    """Get all talk submissions"""
-    talks = db.query(Talk).all()
+def read_talks(
+    search: str = None,
+    category: str = None,
+    level: str = None,
+    speaker_name: str = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all talk submissions with optional filtering
+    - search: Search in title and description
+    - category: Filter by category
+    - level: Filter by level
+    - speaker_name: Filter by speaker name
+    """
+    query = db.query(Talk)
+    
+    # Apply filters if provided
+    if search:
+        search_term = f"%{search}%"
+        query = query.filter(
+            (Talk.title.ilike(search_term)) | 
+            (Talk.description.ilike(search_term)) |
+            (Talk.speaker_name.ilike(search_term))
+        )
+    
+    if category:
+        query = query.filter(Talk.category == category)
+    
+    if level:
+        query = query.filter(Talk.level == level)
+        
+    if speaker_name:
+        query = query.filter(Talk.speaker_name.ilike(f"%{speaker_name}%"))
+    
+    talks = query.all()
     return talks
 
 @app.get("/api/talks/{talk_id}", response_model=TalkResponse)
